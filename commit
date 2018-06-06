@@ -1,0 +1,389 @@
+#!/bin/bash
+# set -x
+# From Gerrit Code Review 2.1.2-rc2-33-g7e30c72
+#
+# Part of Gerrit Code Review (http://code.google.com/p/gerrit/)
+#
+# Copyright (C) 2009 The Android Open Source Project
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+suffix="11111"
+if git rev-parse --verify HEAD >/dev/null 2>&1
+then
+        against=HEAD
+else
+        # Initial commit: diff against an empty tree object
+        against=4b825dc642cb6eb9a060e54bf8d69288fbee4904
+fi
+git diff --diff-filter=ARM  --numstat $against >$(cd $(dirname $0);pwd)/changes.log
+grep "\-[[:space:]]\-" $(cd $(dirname $0);pwd)/changes.log > $(cd $(dirname $0);pwd)/changesbinary.log
+
+echo "" > $(cd $(dirname $0);pwd)/binaryfile.log
+while read ONELINE
+do
+   Binaryfile_Suffix=$(echo $ONELINE | awk -F '.' {'print $2'})
+   Binaryfile_Suffix_Flag=$(echo $Suffix| grep $Binaryfile_Suffix)
+   if [  "${Binaryfile_Suffix_Flag}" == "" ];then
+    echo  $ONELINE >> $(cd $(dirname $0);pwd)/binaryfile.log
+   fi
+done < $(cd $(dirname $0);pwd)/changesbinary.log
+Binaryfile_line=`cat $(cd $(dirname $0);pwd)/binaryfile.log | wc -l`
+
+cat $(cd $(dirname $0);pwd)/binaryfile.log
+
+
+
+CHANGE_ID_AFTER="Bug|Issue"
+MSG="$1"
+changId_falg=0
+# Check for, and add if missing, a unique Change-Id
+#
+add_ChangeId() {
+	clean_message=$(sed -e '
+		/^diff --git a\/.*/{
+			s///
+			q
+		}
+		/^Signed-off-by:/d
+		/^#/d
+	' "$MSG" | git stripspace)
+	if test -z "$clean_message"
+	then
+		return
+	fi
+
+	sed -i 's#^ *##g' "$MSG"
+	if grep -i '^Change-Id:' "$MSG" >/dev/null
+	then
+	  Id_temp="$(grep -i '^Change-Id:' "$MSG")"
+	  sed -i 's#^Change-Id: .*##1' "$MSG"
+	  changId_falg=1
+	  id=$(echo $Id_temp |sed 's/Change-Id: I//')
+	else
+		id=$(_gen_ChangeId)
+	fi
+	
+	perl -e '
+		$MSG = shift;
+		$id = shift;
+		$CHANGE_ID_AFTER = shift;
+
+		undef $/;
+		open(I, $MSG); $_ = <I>; close I;
+		s|^diff --git a/.*||ms;
+		s|^#.*$||mg;
+		exit unless $_;
+
+		@message = split /\n/;
+		$haveFooter = 0;
+		$startFooter = @message;
+		for($line = @message - 1; $line >= 0; $line--) {
+			$_ = $message[$line];
+
+			($haveFooter++, next) if /^[a-zA-Z0-9-]+:/;
+			next if /^[ []/;
+			$startFooter = $line if ($haveFooter && /^\r?$/);
+			last;
+		}
+
+		@footer = @message[$startFooter+1..@message];
+		@message = @message[0..$startFooter];
+		push(@footer, "") unless @footer;
+
+		for ($line = 0; $line < @footer; $line++) {
+			$_ = $footer[$line];
+			next if /^($CHANGE_ID_AFTER):/i;
+			last;
+		}
+		splice(@footer, $line, 0, "Change-Id: I$id");
+
+		$_ = join("\n", @message, @footer);
+		open(O, ">$MSG"); print O; close O;
+	' "$MSG" "$id" "$CHANGE_ID_AFTER"
+}
+_gen_ChangeIdInput() {
+	echo "tree $(git write-tree)"
+	if parent=$(git rev-parse HEAD^0 2>/dev/null)
+	then
+		echo "parent $parent"
+	fi
+	echo "author $(git var GIT_AUTHOR_IDENT)"
+	echo "committer $(git var GIT_COMMITTER_IDENT)"
+	echo
+	printf '%s' "$clean_message"
+}
+_gen_ChangeId() {
+	_gen_ChangeIdInput |
+	git hash-object -t commit --stdin
+}
+
+add_ChangeId
+
+# check commit_message_template
+if [ ! -f ~/.gitmsg ]; then
+	echo -e "TicketNo:\nDescription:\n\nTeam:\nFeature or Bugfix:\nBinary Source:" > ~/.gitmsg
+	git config --global commit.template ~/.gitmsg
+fi
+
+# function errMsg()
+errMsg()
+{
+	echo "ERROR:commit message doesn't match standard format, please check!"
+	echo "====== standard format ======"
+	echo -e "TicketNo:...\nDescription:...\nTeam:(pick one from HIS_DRV, HISI_SW, HISI_DSP, HISI_EE, HISI_TOOLS, PDU_DRV, PDU_APP, PDU_PTL, EMUI, SP_XA_APP, SP_XA_DRV, SP_XA_PTL, HS_BJ_APP, HS_BJ_DRV, HS_BJ_PTL, HS_WH_APP, HS_WH_DRV, HS_WH_PTL, DIVS_SENSORHUB, DIVS_CONTEXTHUB, PDU_PAD, OTHERS)\nFeature or Bugfix:(pick one from Feature, Bugfix)\nBinary Source:"
+	echo "============================="
+	exit 1
+}
+# Check merge commit
+if ! (cat $1 |grep -E "Merge branch" -q);then
+    if ! (cat $1 |grep -E "Revert" -q);then
+	if ! (cat $1 |grep -E "TicketNo:" -q);then
+		errMsg;
+	elif  ! (cat $1 |grep -E "Description:" -q);then
+		errMsg;
+	elif  ! (cat $1 |grep -E "Team:" -q);then
+		errMsg;
+	elif  ! (cat $1 |grep -E "Feature or Bugfix:" -q);then
+		errMsg;
+	elif  ! (cat $1 |grep -E "Binary Source:" -q);then
+		errMsg;
+	fi
+	
+	# Check chinese characters
+	cat $1 |while read line;do
+	if ! echo $line | grep 'Change-Id:';
+	then
+		if echo "$line"|od -c|awk -F ' ' 'BEGIN{ OFS=" " } {sub(/[0-9]+/,"",$1);print $0}'|grep [1-9][0-9][0-9] >/dev/null;
+		then
+			echo "================================================="
+			echo "ERROR:commit message contains chinese characters!"
+			echo "================================================="
+			exit 1
+		fi;
+	else
+			exit 0;
+	fi
+	done
+
+	# modify 2013/8/20 zhanghongbin start
+	# Check Multiple keyword
+	for KEYWORD in TicketNo: Team: Feature Description: Change-Id: ;
+	do
+		keyword_count=`cat $1 |awk '{s+=gsub(/^'$KEYWORD'/,"&")}END{print s}'`
+		if [ $keyword_count -ne 1 ];then
+			echo "================================================="
+			if [ $KEYWORD = 'Feature' ];then
+				echo -e "Multiple \033[31;40;1m Feature or Bugfix:\033[0m, please check. "
+			else
+				echo -e "Multiple \033[31;40;1m $KEYWORD\033[0m, please check. "
+			fi
+			echo ""
+			echo -e "Please make sure \033[31;40;1m TicketNo: Team: Feature or Bugfix: Description: Change-Id:\033[0m appear only once"
+			echo "================================================="
+			exit 1
+		fi
+	done
+
+	feature_bugfix=`cat $1 | grep 'Feature or Bugfix:' | cut -d ':' -f2 | tr -d ' '`
+	teamx=`cat $1 | grep 'Team:' | cut -d ':' -f2 | tr -d '[:space:]'`
+
+	# Check TicketNo input
+	dts_name=`cat $1 | grep '^TicketNo:' | cut -d':' -f2 | tr -d '[:space:]'`
+	case $dts_name in
+	  DTS*)
+		echo $dts_name | grep "DTS[0-9]\{13\}" >/dev/null
+		if [ $? -eq "1" ] || ! [ ${#dts_name} -eq "16" ];then
+			echo "================================================="
+			echo "ERROR:Invalid DTS number, please check. "
+			echo ""
+			echo -e "DTS number MUST start with \033[31;40;1mDTS\033[0m, and follow with \033[31;40;1m13\033[0m numbers."
+			echo "STD FORMAT : DTS2012020212345"
+			echo -e "You input is\033[31;40;1m $dts_name\033[0m , please check."
+			echo "================================================="
+			exit 1
+		fi
+        ;;
+      AR*)
+		echo $dts_name | grep "AR*\{8\}" >/dev/null
+		if [ $? -eq "1" ] || ! [ ${#dts_name} -eq "10" ];then
+			echo "================================================="
+			echo "ERROR:Invalid AR number, please check. "
+			echo ""
+			echo -e "AR number MUST start with \033[31;40;1mAR\033[0m, and follow with \033[31;40;1m8\033[0m numbers and characters."
+			echo "STD FORMAT : AR00013FH2"
+			echo -e "You input is\033[31;40;1m $dts_name\033[0m , please check."
+			echo "================================================="
+			exit 1
+		fi
+        ;;
+	  *)
+		echo "================================================="
+		echo "ERROR:Invalid INPUT, please check."
+		echo ""
+		echo -e "This Field MUST start with \033[31;40;1mDTS\033[0m or \033[31;40;1mAR\033[0m"
+		echo -e "STD FORMAT : \033[31;40;1mDTS2012020212345\033[0m or \033[31;40;1mAR00013FH2\033[0m"
+		echo -e "You input is\033[31;40;1m $dts_name\033[0m , please check."
+		echo "================================================="
+		exit 1
+		;;
+	esac
+
+
+	# Check Team input
+	case $teamx in
+      HISI_DRV*)
+        ;;
+      HISI_SW*)
+        ;;
+      HISI_DSP*)
+        ;;
+      HISI_EE*)
+        ;;
+      HISI_TOOLS*)
+        ;;
+      TOOLS*)
+        ;;
+	  PDU_DRV*)
+		;;
+	  PDU_PTL*)
+		;;
+	  PDU_APP*)
+		;;
+	  EMUI*)
+		;;
+      SP_XA_APP*)
+        ;;
+      SP_XA_DRV*)
+        ;;
+      SP_XA_PTL*)
+        ;;
+      HS_BJ_APP*)
+        ;;
+      HS_BJ_DRV*)
+        ;;
+      HS_BJ_PTL*)
+        ;;
+      HS_WH_APP*)
+        ;;
+      HS_WH_DRV*)
+        ;;
+      HS_WH_PTL*)
+        ;;
+	  PDU_PAD*)
+     		;;
+          DIVS_CONTEXTHUB*)
+		;;
+          DIVS_SENSORHUB*)          
+		;;
+	  OTHERS*)
+		;;
+	  *)
+		echo "================================================="
+		echo "ERROR:Invalid Team, please check."
+		echo ""
+		echo "Valid option: HISI_DRV | HISI_SW | HISI_DSP | HISI_EE | HISI_TOOLS | PDU_DRV | PDU_PTL | PDU_APP | EMUI | SP_XA_APP | SP_XA_DRV | SP_XA_PTL | HS_BJ_APP | HS_BJ_DRV | HS_BJ_PTL | HS_WH_APP | HS_WH_DRV | HS_WH_PTL | PDU_PAD | DIVS_CONTEXTHUB | DIVS_SENSORHUB | OTHERS"
+		echo -e "You input is\033[31;40;1m $teamx\033[0m , Please pick one from HIS_DRV, HISI_SW, HISI_DSP, HISI_EE, HISI_TOOLS, PDU_DRV, PDU_APP, PDU_PTL, EMUI, SP_XA_APP, SP_XA_DRV, SP_XA_PTL, HS_BJ_APP, HS_BJ_DRV, HS_BJ_PTL, HS_WH_APP, HS_WH_DRV, HS_WH_PTL, DIVS_SENSORHUB, DIVS_CONTEXTHUB, PDU_PAD, OTHERS after \033[31;40;1m Team:\033[0m ; and you could add anything after these words like \033[31;40;1m Team:PDU_DRV1\033[0m or \033[31;40;1m Team:EMUI framework\033[0m"
+		echo "================================================="
+		exit 1
+		;;
+	esac
+	
+	# Check Feature or Bugfix input
+	case $feature_bugfix in
+	  "Bugfix")
+	    ;;
+	  "Feature")
+	    ;;
+	  *)
+	    echo "================================================="
+	    echo "ERROR:Invalid Feature or Bugfix, please check."
+	    echo ""
+	    echo "Valid option: Feature | Bugfix "
+	    echo -e "You input is\033[31;40;1m $feature_bugfix\033[0m , please check."
+	    echo "================================================="
+	    exit 1
+	    ;;
+	esac
+	# check Change-Id in lastline
+	lastline=`cat $1 | grep -v ^Tested-by: |grep -v ^Reviewed-on: |grep -v ^Reviewed-by: |awk '{gsub(/^#.*/,"");print $0}'|awk '{gsub(/^[ \t]+$/,"");print $0}'|awk NF |tail -n -1`
+	if (cat $1 |grep -E "Change-Id:" -q);then
+		if ! (echo $lastline |grep -E "Change-Id:" -q);then
+			echo "================================================="
+			echo "ERROR:Change-Id not in the last line, please check."
+			echo ""
+			echo -e "Commit message lastline is\033[31;40;1m $lastline\033[0m , Please make sure your Change-Id: is in the last line."
+			echo "================================================="
+			exit 1
+		fi
+	fi
+	# check keyword order
+
+        # check 'Binary Source:' value
+        Binary_line=`cat $1 | grep 'Binary Source:' | cut -d ':' -f2 | tr -d ' '`
+        if [ "${Binary_line}" ]; then
+            if [ "${Binaryfile_line}" == "1" ]; then
+                echo ""
+            else
+              #Binary_line must more than 5 characters
+              BinarySrcLen=`expr length $Binary_line`
+              if [ $BinarySrcLen -le "5" ];then
+
+                echo "================================================="
+                echo "ERROR:Invalid Binary Source, You should enter more than 5 characters."
+                echo ""
+                echo "Please input binary source to ensure traceability."
+                echo "You input is $Binary_line , please check."
+                echo "================================================="
+                echo "================================================="
+                echo "Binary file:"
+                cat $(cd $(dirname $0);pwd)/binaryfile.log
+                echo "================================================="
+
+                exit 1
+              fi
+
+            fi
+        else
+            if [ $Binaryfile_line == "1" ]; then
+                echo "================================================="
+                echo "ERROR:Invalid Binary Source:"
+                echo ""
+                echo "Valid option: No"
+                echo "You input is $Binary_line , please check."
+                echo "================================================="
+                exit 1
+            else
+
+                echo "================================================="
+                echo "ERROR:Invalid Binary Source,You should enter more than 5 characters."
+                echo ""
+                echo  "Please input binary source to ensure traceability."
+                echo "You input is $Binary_line , please check."
+                echo "================================================="
+                echo "================================================="
+                echo "Binary file:"
+                cat $(cd $(dirname $0);pwd)/binaryfile.log
+                echo "================================================="
+
+                exit 1
+
+            fi
+
+        fi
+
+    fi
+fi
+# modify 2013/8/20 zhanghongbin end
+
