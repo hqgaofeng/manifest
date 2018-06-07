@@ -1,0 +1,89 @@
+#!/bin/bash
+
+PATH=$HOME/bin:$PATH
+set -x
+REPO_URL="http://intoyv.com/tools/manifest.git"
+REPO_BRANCH="master"
+SVN_URL="http://intoyv.com/svn/tools/Trunk"
+
+# clone git repo
+if [ ! -d apk_git_repository ];then 
+    mkdir apk_git_repository
+fi
+pushd "apk_git_repository"
+    if [ ! -d .git ];then 
+        echo "git clone $REPO_URL"
+        git clone $REPO_URL
+        if [[ $? != 0 ]];then
+    	echo "git clone fail!!!!!!"
+    	exit 1
+        fi
+    fi
+    git pull
+    if [[ $? != 0 ]];then
+        echo "git clone  fail!!!!!!"
+        exit 1
+    fi
+popd
+# svn checkout root
+if [ ! -d svn_repository ];then 
+    mkdir svn_repository
+fi
+pushd "svn_repository"
+    if [ ! -d intoyv ];then 
+        echo "git svn clone -r HEAD $SVN_URL intoyv"
+        git svn clone -r HEAD $SVN_URL intoyv
+        if [[ $? != 0 ]];then
+    	echo "git svn clone fail!!!!!!"
+    	exit 1
+        fi
+    fi
+    pushd "intoyv"
+        git svn fetch --username "intoyv"
+        if [[ $? != 0 ]];then
+			echo "git svn fetch fail!!!!!!"
+			exit 1
+        fi
+        git svn rebase --username "intoyv"
+        if [[ $? != 0 ]];then
+			echo "git svn rebase fail!!!!!!"
+    	exit 1
+		fi
+	popd
+popd
+
+echo "GERRIT_PROJECT=$GERRIT_PROJECT"
+
+mv -f svn_repository/intoyv/.git ./
+
+#rsync -va --exclude=.git --delete apk_git_repository/svn/binary/config/ svn_repository/intoyv/
+rsync -va --exclude=.git --delete apk_git_repository/svn/ svn_repository/intoyv/
+rsync_ok=$?
+
+while [[ "$rsync_ok" != "0" ]]
+do
+    rsync -va --exclude=.git --delete apk_git_repository/svn svn_repository/intoyv/
+    rsync_ok=$?
+    sleep 5
+done
+
+mv -f .git svn_repository/intoyv/
+
+pushd "svn_repository/intoyv"
+    git add --all 
+    if [[ "$GERRIT_CHANGE_URL" == "NULL" || "$GERRIT_CHANGE_URL" == "" ]];then
+		git commit -m "update"
+    else
+        git commit -m "update"
+    fi
+    git svn dcommit --rmdir --username "intoyv"
+
+    if [[ $? != 0 ]];then
+		echo "upload to svn fail!!!!!!"
+        git reset HEAD^ --hard
+        git clean -f -d
+		exit 1
+    fi
+popd
+
+
