@@ -1,0 +1,2 @@
+ldap:CN=SCM,OU=AppGroups,OU=Groups,OU=UsersAndGroups,DC=china,DC=ontoyv,DC=com                                	ldap/SCM
+user:gaofeng                                	user/gaofeng
