@@ -1,0 +1,58 @@
+# args：
+#     arg1: source dir
+#     arg2: target file
+# return:
+#     0/1
+# desc:
+#     public_tar_zip
+
+function public_tar_zip()
+{
+	if [[ -f "$2" ]];then
+		rm -rf $2
+	fi
+	#check the pigz installed
+	pigz --version
+	if [[ "$?" == "0" ]];then
+		tar -cf "$2" --use-compress-program=pigz "$1"
+		return $?
+	else
+		tar -czf "$2" "$1"
+		return $?
+	fi
+}
+
+# args：
+#     arg1: tar.gz file
+#     arg2: dest dir
+# return:
+#     0/1
+# desc:
+#     public_tar_unzip
+
+function public_tar_unzip()
+{
+	if [[ ! -d $2 ]];then
+		mkdir -p $2
+	fi
+	#check the pigz installed
+	pigz --version
+	if [[ "$?" == "0" ]];then
+		tar -xf "$1" --use-compress-program=pigz -C "$2"
+		return $?
+	else
+		tar -xzf "$1" -C "$2"
+		return $?
+	fi
+}
+
+# args：
+# return:
+#     yyyy-mm-dd HH:MM:SS
+# desc:
+#     public_time
+
+function public_time()
+{
+	echo `date +"%Y-%m-%d %H:%M:%S"`
+}
