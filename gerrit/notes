@@ -1,0 +1,41 @@
+1.replication插件的配置
+在/opt/gerrit/gerrit_site/etc新建文件replication.config，输入内容
+[remote "rnd-isourceb.huawei.com"]
+  projects = devicemgr
+  url = git@rnd-isourceb.huawei.com:z00294273/devicemgr.git
+  push = +refs/heads/*:refs/heads/*
+  push = +refs/tags/*:refs/tags/*
+  push = +refs/changes/*:refs/changes/*
+  threads = 3
+执行指令，重载插件
+ssh hw_gerrit gerrit plugin reload replication
+2安装events-log插件
+将events-log.jar文件放入/opt目录下，执行下面语句安装.
+ssh hw_gerrit gerrit plugin install -n events-log.jar /opt/events-log.jar
+3.附：Gerrit插件build方法
+3.1下载buck
+git clone https://github.com/facebook/buck.git
+3.2下载ant和curl
+apt-get install ant
+apt-get install curl
+3.3编译buck
+在buck文件夹下，执行
+ant
+3.4下载Gerrit源码（注意只下载对应版本分支的）
+git clone -b stable-2.11 https://gerrit.googlesource.com/gerrit
+3.5在gerrit目录下和gerrit/plugins目录下下载插件，比如events-log插件（注意只下载对应版本分支的）
+git clone -b stable-2.11 https://gerrit.googlesource.com/plugins/events-log
+3.6编译插件
+在gerrit目录下执行buck build events-log:events-log
+在/gerrit/buck-out/gen/events-log目录下会找到events-log.jar
+3.7安装插件
+将jar文件移至/opt目录下，再执行
+ssh hw_gerrit gerrit plugin install -n events-log.jar /opt/events-log.jar
+
+背景：开发人员反馈gerrit每天都得登陆一次，缓存账号cookie的时间过短，比较麻烦。希望可以而cache缓存，不用每天都登陆一遍
+解决办法：
+在gerrit的配置文件gerrit.config增加下面配置并重启gerrit：
+[cache "web_sessions"]
+        maxAge = 240h
+注：maxAge就是gerrit网页cache的过期时间，不设置默认是12小时，也就是一般一天就失效了，最长时间是90天，
+对配置有兴趣的可以参考：http://android.huawei.com:8080/Documentation/config-gerrit.html
