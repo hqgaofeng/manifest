@@ -4,6 +4,7 @@ import os
 import xlwt
 import sys
 import re
+import commands
 
 class excel(object):
     def __init__(self):
@@ -45,14 +46,14 @@ class excel(object):
 
     def SetCaption(self,sheet,line=0):
         #设置列宽
-        sheet.col(0).width=256*65
-        sheet.col(1).width=256*40
-        sheet.col(2).width=256*45
-        sheet.col(3).width=256*10
+        sheet.col(5).width=256*40
         sheet.col(4).width=256*40
-        sheet.col(5).width=256*25
-        sheet.col(6).width=256*40
-        sheet.col(7).width=256*30
+        sheet.col(6).width=256*35
+        sheet.col(7).width=256*10
+        sheet.col(2).width=256*40
+        sheet.col(1).width=256*25
+        sheet.col(0).width=256*40
+        sheet.col(3).width=256*30
         sheet.col(8).width=256*10
         sheet.col(9).width=256*40
         #设置行高
@@ -60,16 +61,18 @@ class excel(object):
         sheet.row(0).set_style(tall_style)
         #设置标题
         style=self.GetStyle(self.GetFont(),self.GetBorders(),self.GetAlignment())
-        sheet.write(line, 0, 'project',style)
-        sheet.write(line, 1, 'branch',style)
-        sheet.write(line, 2, 'id',style)
-        sheet.write(line, 3, 'number',style)
-        sheet.write(line, 4, 'DTS',style)
-        sheet.write(line, 5, 'name',style)
-        sheet.write(line, 6, 'url',style)
-        sheet.write(line, 7, 'lastUpdated',style)
+        sheet.write(line, 5, 'project',style)
+        sheet.write(line, 4, 'branch',style)
+        sheet.write(line, 6, 'id',style)
+        sheet.write(line, 7, 'number',style)
+        sheet.write(line, 2, 'DTS',style)
+        sheet.write(line, 1, 'name',style)
+        sheet.write(line, 0, 'url',style)
+        sheet.write(line, 3, 'lastUpdated',style)
         sheet.write(line, 8, 'status',style)
         sheet.write(line, 9, 'topic',style)
+        sheet.write(line, 10, 'insert',style)
+        sheet.write(line, 11, 'delete',style)
 
 def ExportResultToExcel(srcfile_list,destfile):
     
@@ -84,13 +87,18 @@ def ExportResultToExcel(srcfile_list,destfile):
     if len(srcfile_list) ==1:
         excs.workbook.save(destfile)
         return
-    sheet = excs.workbook.add_sheet('open_not_Verified', cell_overwrite_ok=True)
+    sheet = excs.workbook.add_sheet('open_NoV1', cell_overwrite_ok=True)
     excs.SetCaption(sheet)
     Write2Sheet(sheet,srcfile_list[1],style)
-    sheet = excs.workbook.add_sheet('wait_merge', cell_overwrite_ok=True)
+    sheet = excs.workbook.add_sheet('open_V1_NoCR1', cell_overwrite_ok=True)
     excs.SetCaption(sheet)
     Write2Sheet(sheet,srcfile_list[2],style)
+    sheet = excs.workbook.add_sheet('open_V1_CR1_NoCR2', cell_overwrite_ok=True)
+    excs.SetCaption(sheet)
+    print "-----------------------",srcfile_list[3]
+    Write2Sheet(sheet,srcfile_list[3],style)
     excs.workbook.save(destfile)
+    
     print 'export finished!'
 
 def Write2Sheet(sheet,file,style):
@@ -106,16 +114,22 @@ def Write2Sheet(sheet,file,style):
             if num==0:
                 num+=1
                 continue
-            sheet.write(num, 0, info[0],style)
-            sheet.write(num, 1, info[1],style)
-            sheet.write(num, 2, info[2],style)
-            sheet.write(num, 3, info[3],style)
-            sheet.write(num, 4, info[4],style)
-            sheet.write(num, 5, info[5],style)
-            sheet.write(num, 6, xlwt.Formula('HYPERLINK("'+ info[6] +'")'),style)
-            sheet.write(num, 7, info[7],style)
+            sheet.write(num, 0, xlwt.Formula('HYPERLINK("'+ info[6] +'")'),style)
+            sheet.write(num, 1, info[5],style)
+            sheet.write(num, 2, info[4],style)
+            sheet.write(num, 3, info[7],style)
+            sheet.write(num, 4, info[1],style)
+            sheet.write(num, 5, info[0],style)
+            sheet.write(num, 6, info[2],style)
+            sheet.write(num, 7, info[3],style)
             sheet.write(num, 8, info[8],style)
             sheet.write(num, 9, "",style)
+            print info[2]
+            print "ssh pagilecdmatc@androidxian.huawei.com -p 29418 gerrit query %s --patch-sets | grep sizeInsertions|cut -d ':' -f 2"
+            x,y=commands.getstatusoutput("ssh pagilecdmatc@androidxian.huawei.com -p 29418 gerrit query %s --patch-sets|grep  sizeInsertions|head -1|cut -d ':' -f 2"%info[2])
+            sheet.write(num, 10, y,style)
+            m,n=commands.getstatusoutput("ssh pagilecdmatc@androidxian.huawei.com -p 29418 gerrit query %s --patch-sets|grep sizeDeletions|head -1|cut -d ':' -f 2"%info[2])
+            sheet.write(num, 11, n,style)
             num+=1
     return 0
 
@@ -124,4 +138,19 @@ if __name__ == "__main__":
     destfile=sys.argv[2]
     srcfile_list=srcfile.split(' ')
     ExportResultToExcel(srcfile_list,destfile)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
