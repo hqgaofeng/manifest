@@ -39,3 +39,8 @@ ssh hw_gerrit gerrit plugin install -n events-log.jar /opt/events-log.jar
         maxAge = 240h
 注：maxAge就是gerrit网页cache的过期时间，不设置默认是12小时，也就是一般一天就失效了，最长时间是90天，
 对配置有兴趣的可以参考：http://android.intoyv.com:8080/Documentation/config-gerrit.html
+
+问题：
+Gerrit默认设置的代码review权限是不排除提交者自身的，但是对于软件开发评审规范要求不允许提交人自己review自己提交的代码
+解决办法：
+在gerrit的权限配置里面除了有权限review的群组外，增加对Change Owner的限制，打分值控制0，也即是不能review
