@@ -1,0 +1,4 @@
+格式为  [ url "address1" ]
+                       insteadof = address2   
+意味着在下载代码时访问地址address2会自动被替换为地址address1，
+具体的替换动作在repo init、repo sync等代码下载命令中都会涉及。
