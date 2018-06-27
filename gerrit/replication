@@ -1,0 +1,31 @@
+一．背景：
+  公司手机团队愈发壮大，不同地域之间协同工作的情况也越来越多了，这个就涉及到一个分支的跨地域同步
+二．现状简介：
+2.Replication通常使用SSH协议连接进行数据同步，这就需要提前做如下设置：
+将远端服务器的公钥(ssh_host__key.pub)记录在主机的~/.ssh/known_hosts中，同时将主机的个人密钥添加到远端服务器的~/.ssh/ authorized_keys中，确保主机上的replication通过ssh可以直接连接到远端服务器。
+3.Replication常见的配置如下，配置文件位置：/review_site/etc/ replication.config：
+    [remote "pubmirror"]
+		url = gerrit2@intoyv.com:/home/git/${name}.git
+		push = +refs/heads/*:refs/heads/*
+		push = +refs/tags/*:refs/tags/*
+		threads = 3
+		authGroup = Public Mirror Group
+url：配置远端服务器的git仓库绝对路径，目录层级深度可以控制，但同一目录层级下区分不同仓的同步做不到，需要使用authgroup权限控制。
+push：配置同步的内容，refs/heads、tags、changes等，+号为强制覆盖，不带+号意为当远端有自己的修改时不会被覆盖，即停止同步。
+authGroup：主机上群组，用于控制同步权限，只有为该群组配置了读权限的仓和分支才能同步到远端。
+threads、replicationDelay、timeout:性能参数，线程、堵塞等待时间、同步等待时间等，通常可以不配置使用默认值。
+4.配置好ssh协议和replication配置相关内容后，需要重启gerrit服务才能使replication功能生效。
+三．问题分析：
+1.Replication在正常情况下数据同步实时性非常好，不论是少量的代码修改还是几百M的文件提交，都可以确保在30秒内同步到远端服务器，这也是我们选择它的最主要原因；
+2.相对于非常好的同步实时性，replication自身的问题也是多多，列举几个比较严重的问题：
+2.1 每次对replication参数设置进行修改后，必须要重启gerrit服务才能生效，并且重启后replication会自行检测所有远端服务器仓列表，耗时非常长，检测期间是无法进行实时同步的。
+2.2 replication任务会占用主机的资源，在影响主机gerrit性能的同时也受gerrit队列任务的影响，当同时有大量下载、提单任务在执行或网速堵塞时，replication任务被迫需要等待，不再满足实时同步要求。
+2.3 针对主机上某分支A新增仓的情况，有一定概率出现如下情况：
+主机上该分支新增的仓被replication检测到并在远端服务器新增对应仓后，远端服务器无法识别该新增仓，需要定时刷新gerrit缓存才能识别；
+主机上任一新增的仓都会被replication检测到并在远端服务器新增该仓，如果无对应分支该仓会处于无分支状态。需要通过authgroup和父仓模板权限设置才能解决；
+主机上该分支新增的仓被replication到远端服务器新增后，远端新增的这个仓默认是继承All-Projects的，如果没有对All-Projects设置读权限就有问题，需要单独设置；
+主机上已有的仓新增该分支后如果远端服务器没有这个仓的话，就不会新增该仓并同步分支，导致同步失败；
+不走gerrit的新建分支动作（git branch、git fetch 命令）必定无法被replication检测到和同步，需要通过git push操作去新建分支才可以。
+2.4 某些异常情况下实时同步会失败，比如主机上对应分支的一个commit时间不准确，会导致replication将这个同步任务停留在waiting状态，后面的commit即使时间改回来也只能继续waiting，必须运行fetch脚本才能更正。还碰到过一些提交人信息异常的导致replication同步失败…
+2.5 另外还有一些小问题，比如远端服务器上对某个仓的被同步分支误操作做了提交，此时如果主机上对应仓的分支没有新提交要同步，两侧的分支节点就会不一致，即replication只会检测主机的分支状态，不会去检测远端的状态。需要在远端服务器上取消被同步分支的权限才能规避该问题。
+3.上述大部分问题都可以通过各种方式进行规避，包括定时运行fetch脚本确保新增仓和分支节点都能同步一致，设置权限等。但有些问题比如队列堵塞等还没有好的解决办法。
