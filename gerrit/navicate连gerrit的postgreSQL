@@ -1,0 +1,5 @@
+1，将PostgreSQL服务绑定在外网网卡上，以便允许来自gerrit服务器的远程连接：
+  1）查看配置文件位置：select * from pg_settings where category like 'File%';
+  2）修改pg_hba.conf文件，添加上本地的IP地址（拷贝一行修改下IP）：
+2，配置防火墙自定义规则，设置允许访问的网络连接的端口：/etc/shorewall/rules
+ 重启shorewall
