@@ -1,0 +1,8 @@
+问题描述：可以正常下载代码，key验证也是没有问题的，但是repo upload的时候会报如下错误：
+如果使用git push 远端库名称 本地分支:refs/for/远程分支名字 提交方式也没有问题
+问题原因分析：
+出现这个问题的原因基本就是.gitconfig中的邮件地址配置有问题，这个跟repo工具自身的提交方式有关系，repo提交的时候会取.gitconfig中email中@前面的一段作为用户名@中心库名：29418/git仓名（可以通过repo --trace upload查看提交过程），而git 是直接取.gitconfig中替换的地址，所以.gitconfig中配置的mail地址@前的部分一定要写gerrit 的user名（最终mail地址错误没有关系，这个mail基本作用不大，gerrit发邮件会发到gerrit上配置的邮箱内）
+ 
+[user]    
+        name = gaofeng
+        email = gaofeng@intoyv.com      #mail地址中(@前)一定要和name一致
