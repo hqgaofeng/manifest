@@ -1,0 +1,48 @@
+Gerrit with ELK
+1 ELK原理
+    elasticsearch  logstash  kibana
+2 某时刻的数据看板
+    ip统计、http请求统计、用户数量统计、TOP访问统计
+3、http访问与GeoIP
+    内网IP数据库与GeoIP结合
+
+gerrit 数据库表名称解析
+以 gerrit v2.12 为例
+account_external_ids (1-4,5,8,9,10,11,15)： 用户附加信息。主要是用户及邮箱相关。（account_id）
+account_group_by_id (2-3,4,5,6,7)： 用户组信息。(group_id)
+account_group_by_id_aud (3-2,4,5,6,7)： 用户组添加/删除log。(group_id)
+account_group_members (4-1,2,3,5,6,7,8,9,10,11)： 用户组成员信息。（account_id）。(group_id)
+account_group_members_audit (5-1,2,3,4,6,7,8,9,10,11,15)： 用户组成员添加/删除log。（account_id）。(group_id)
+account_group_names (6-2,3,4,5,7,15)： 用户组名称。（account_id）
+account_groups (7-2,3,4,5,6,15)： 用户组信息。（account_id）
+account_patch_reviews (8-1,4,5,9,10,11,15)： 用户提交的patch所涉及的文件名称。（account_id）
+account_project_watches (9-1,4,5,8,10,11,15)： 用户关注的project信息。（account_id）
+account_ssh_keys (10-1,4,5,8,9,11,15)： 用户publickey。（account_id）
+accounts (11-1,4,5,8,9,10,15)： 用户账号信息。（account_id）
+change_messages (12-13,14,15,16)： change history信息。（change_id）
+changes (13-12,14,15,16)： change 相关信息。（change_id）
+patch_comments (14-12,13,15,16)： 用户对patch的评论（"draft"）。（change_id）
+patch_set_approvals (15-1,4,5,8,9,10,11,12,13,14,16)： change 评审记录。（change_id）。（account_id）
+patch_sets (16-12,13,15,15)： patch 创建信息。（change_id）
+schema_version (17-)： 数据库信息版本
+starred_changes (18-)： 用户关注的change
+submodule_subscriptions (19-)： 子模块信息
+system_config (20-)： 系统信息。如：安装路径
+
+1、下载插件
+    https://gerrit-ci.gerritforge.com/view/Plugins-stable-2.13/job/plugin-metrics-reporter-graphite-stable-2.13/
+2、添加插件配置文件
+    路径：$review_site/etc/
+    名称：metrics-reporter-graphite.config
+    内容：
+    [graphite]
+        host = 192.168.0.2
+        prefix = rndhap
+        port = 2003
+3、安装graphite
+    https://www.vultr.com/docs/how-to-install-and-configure-graphite-on-ubuntu-16-04
+    https://www.howtoing.com/how-to-install-and-use-graphite-on-an-ubuntu-14-04-server
+
+4、其他
+    由于django报错，Apache始终起不来，暂用graphite命令行启动
+    sudo graphite-manage runserver 0.0.0.0:9999
