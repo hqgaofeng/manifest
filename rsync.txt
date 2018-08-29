@@ -1,0 +1,4 @@
+cd ~
+pwd
+echo "rsync -avz --progress /home/gwx441843/svn/ gwx441843@10.180.58.244:/home/gwx441843/svn_146/"
+rsync -avz --progress /home/gwx441843/svn/ gwx441843@10.180.58.244:/home/gwx441843/svn_146/
