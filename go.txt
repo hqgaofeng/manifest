@@ -1,0 +1,371 @@
+Google Confidential and Proprietary
+Android Go Edition Device Configuration Guide
+Early draft 2017-11-05
+Table of contents
+Android Go Edition Device Configuration
+Product device makefile configuration
+List of more important default configuration flags
+Enable “Swap to zRAM”
+Enable SVELTE malloc
+Include Android Go Audio Package
+Configure user data filesystem to F2FS
+Configure foreground heap growth multiplier
+Writing optimized device SE Linux policy
+Device overlay configuration
+Device package configuration
+Configure product locales
+Configure Google Keyboard (Gboard)
+Other configuration changes
+Android Go Edition Kernel Configuration
+Kernel config
+Enable memcg
+Enable LZ4 compression for zRAM
+Disable KSM
+Disable SLUB debug
+Kernel Networking Unit Tests
+Kernel patches
+About Google Mobile Services Go Edition
+Downloading GMS Go Edition
+Integrating GMS Go Edition
+Integrating Launcher3 Go Edition
+References
+Abstract
+This document is intended to describe how to get started with the initial configuration of an Android Go Edition
+device build target and how to integrate GMS Go Edition application package.
+. 2017 Google, Inc. All Rights Reserved. No express or implied warranties are provided for herein. All specifications are subject to change
+and any expected future products, features or functionality will be provided on an if and when available basis.
+1
+Google Confidential and Proprietary
+Android Go Edition Device Configuration
+The below sections describe mandatory and recommended device build target configuration
+Product device makefile configuration
+The product device makefile must include the go_defaults.mk for 1GB or go_defaults_512.mk for 512MB, to
+include and setup all the default Android Go Edition build configuration flags.
+# Inherit Go default properties, sets is-low-ram-device flag etc.
+$(call inherit-product, build/target/product/go_defaults.mk)
+List of more important default configuration flags
+The following are some of the more important configuration flags in go_defaults.mk & go_defaults_512.mk, this
+list does not include all the flags, please refer to go_defaults.mk, go_defaults_512.mk and
+go_defaults_common.mk in build/target/product/ in the source code tree for the complete list.
+go_defaults_common.mk
+# Set lowram options
+PRODUCT_PROPERTY_OVERRIDES += \
+ro.config.low_ram=true \
+ro.lmk.critical_upgrade=true \
+ro.lmk.upgrade_pressure=40
+go_defaults_512.mk additions
+# lmkd can kill more now.
+PRODUCT_PROPERTY_OVERRIDES += \
+ro.lmk.medium=700
+go_defaults_common.mk
+# Always preopt extracted APKs to prevent extracting out of the APK for gms
+# modules.
+PRODUCT_ALWAYS_PREOPT_EXTRACTED_APK := true
+# Set threshold to filter unused apps
+PRODUCT_PROPERTY_OVERRIDES += \
+pm.dexopt.downgrade_after_inactive_days=10
+# Set the compiler filter for shared apks to quicken.
+PRODUCT_PROPERTY_OVERRIDES += \
+pm.dexopt.shared=quicken
+# Speed profile services and wifi-service to reduce RAM and storage.
+PRODUCT_SYSTEM_SERVER_COMPILER_FILTER := speed-profile
+2
+Google Confidential and Proprietary
+# Use a profile based boot image for this device. Note that this is currently a
+# generic profile and not Android Go optimized.
+PRODUCT_USE_PROFILE_FOR_BOOT_IMAGE := true
+PRODUCT_DEX_PREOPT_BOOT_IMAGE_PROFILE_LOCATION :=
+frameworks/base/config/boot-image-profile.txt
+go_defaults_common.mk
+# Default heap sizes. Allow up to 256m for large heaps to make sure a single app
+# doesn't take all of the RAM.
+PRODUCT_PROPERTY_OVERRIDES += dalvik.vm.heapgrowthlimit=128m
+PRODUCT_PROPERTY_OVERRIDES += dalvik.vm.heapsize=256m
+# Do not generate libartd.
+PRODUCT_ART_TARGET_INCLUDE_DEBUG_BUILD := false
+# Strip the local variable table and the local variable type table to reduce
+# the size of the system image. This has no bearing on stack traces, but will
+# leave less information available via JDWP.
+PRODUCT_MINIMIZE_JAVA_DEBUG_INFO := true
+go_defaults_512.mk additions
+# madvise random in ART to reduce page cache thrashing.
+PRODUCT_PROPERTY_OVERRIDES += \
+dalvik.vm.madvise-random=true
+Enable “Swap to zRAM”
+● Follow the instructions at source.android.com to enable swap to zRAM, kernel config, SE Linux policy
+changes etc.
+● Configure the zRAM size to 75% in the fstab file.
+● Enable LZ4 compression for zRAM, also see kernel config section.
+Example /device/<company>/<device>/fstab.enableswap
+/dev/block/zram0 none swap defaults zramsize=75%
+Example <product-device>.mk file
+PRODUCT_COPY_FILES +=
+device/<company>/<device>/fstab.enableswap:root/fstab.enableswap
+Example init.rc
+on init
+3
+Google Confidential and Proprietary
+# Set zRAM compression to lz4
+write /sys/block/zram0/comp_algorithm lz4
+Enable SVELTE malloc
+Configure jemalloc for low memory, default to a single arena to minimize PSS consumed by jemalloc.
+Example BoardConfig.mk
+MALLOC_SVELTE := true
+Include Android Go Audio Package
+To minimize the size of the system image it is strongly recommended to include Android Go Audio Package
+instead of the generic Audio Package (AllAudio.mk).
+Example <product-device>.mk
+$(call inherit-product-if-exists, frameworks/base/data/sounds/AudioPackageGo.mk)
+Configure user data filesystem to F2FS
+For increased performance it is strongly recommended to enable F2FS on Android Go Edition devices. A few
+Android Platform features, such as SQLite (WAL for example), have been tuned for better performance on F2FS
+compared to EXT4.
+● Enable F2FS in kernel config, see kernel config section below.
+● Configure build system to generate the user data image as F2FS type.
+● Update fstab to mount the /data partition using F2FS type.
+Example BoardConfig.mk
+TARGET_USERIMAGES_USE_F2FS := true
+BOARD_USERDATAIMAGE_FILE_SYSTEM_TYPE := f2fs
+Configure foreground heap growth multiplier
+In case the device is experiencing too many GCs, it is possible to reduce GC frequency by increasing how much
+the dalvik heap grows after each GC. This is controlled with "dalvik.vm.foreground-heap-growth-multiplier" that
+can be set in <product-device>.mk. The default value is 1.0.
+Note that this will increase RAM usage by at least a few MB and is not recommended for 512MB devices.
+Example <product-device>.mk
+# Reduces GC frequency of foreground apps by 50%
+PRODUCT_PROPERTY_OVERRIDES += dalvik.vm.foreground-heap-growth-multiplier=2.0
+4
+Google Confidential and Proprietary
+Writing optimized device SE Linux policy
+On low RAM devices it is even more important to have an optimized device SE Linux policy. Device specific
+policy should be restarted periodically - started from scratch, not copied over. See source.android.com for
+generic information and below a few pointers for low RAM devices.
+Unnecessarily large policy:
+● Consumes additional memory as it stays loaded in the kernel.
+● Wastes disk space on the vendor images.
+● Increases runtime policy lookup times.
+When cleaning up by removing mostly dead-policy, unused permissions, etc. it is not uncommon to reduce the
+size of a typical device policy by 90% ( SoC vendor provided policies are often common to a wide range of
+chipsets and reference devices and contains “all” configurations and are not optimized for a specific device ).
+Don’t use CAP_DAC_OVERRIDE:
+dac_override completely overrides Unix permissions in all cases. Instead of using it, give the files the right
+permissions or the process the correct group(s).
+Example:
+● boot_logo_updater needs access to /dev/graphics/fb0.
+● Instead of giving it dac_override, consider making the file owned by root so boot_logo_updater can
+access it.
+Use provided types for driver access:
+Such as audio_device, camera_device, gpu_device. Prevents you from opening up security holes and keeps
+you moving forward with security improvements in the OS (e.g. Android N media hardening)
+Example:
+● /dev/camera-isp should be camera_device instead of camera_isp_device.
+● Only the camera HAL has access to camera_device and camera_isp_device so the security
+characteristics are the same i.e. there is no security improvement, just policy bloat.
+● If Apps require driver access, that’s a good indication that something is mislabeled. The only device
+specific driver that apps should have access to is the GPU. Therefore drivers accessed by libGL should
+likely be labeled gpu_device.
+Do not log to the sdcard:
+● Nothing should persist across factory resets (which does not wipe the sdcard).
+● Remove policies that allow sdcard dir/files permissions.
+Use meaningful names for processes, files, and selinux types:
+● Increase readability and reduce error risks.
+Don’t use default labels:
+● Use specific labels when possible, this reduces the attack surface.
+Macros:
+● Using macros in many cases makes the policy more readable and future-proof.
+5
+Google Confidential and Proprietary
+Example:
+● Instead of granting “property_service:set”, use the “set_prop” macro. And the same for “get_prop”.
+Treble:
+● Vendor binaries should not access the /system partition.
+● System binaries should not access /vendor, hardware, or HALs.
+HALs:
+● Use existing HAL names when possible instead of making new ones.
+○ This lets you reuse the existing policy.
+○ This reduces policy size since only one policy is used instead of a new one plus the existing
+(unused) one.
+6
+Google Confidential and Proprietary
+Device overlay configuration
+Below list include feature configurations and flags that are handled by platform overlay configuration files,
+including examples of how to include the configuration into the device build target.
+● Bluetooth must be turned OFF by default
+● Android Data Saver mode must be turned ON by default
+● Screen auto-rotate must be disabled by default (can be manually enabled by user)
+● Live wallpaper feature must be disabled
+Example overlay/frameworks/base/packages/SettingsProvider/res/values/defaults.xml file:
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+<bool name="def_bluetooth_on">false</bool>
+<bool name="def_restrict_background_data">true</bool>
+<!-- Do not enable auto rotation switching. -->
+<bool name="def_accelerometer_rotation">false</bool>
+</resources>
+Example setting the DEVICE_PACKAGE_OVERLAYS in device.mk to include an /overlay folder:
+DEVICE_PACKAGE_OVERLAYS += $(LOCAL_PATH)/overlay
+Live wallpaper feature
+Make sure to not declare the < feature name= "android.software.live_wallpaper" />. This is often declared by
+copying an xml file to /etc/permissions/ using PRODUCT_COPY_FILE, make sure not to do that.
+Disabled managed_users feature for low_ram devices:
+Example frameworks/native/data/etc/handheld_core_hardware.xml
+<feature name="android.software.managed_users" notLowRam="true" />
+Pinner service configuration
+PinnerService is a service that allows locking commonly read files to prevent page cache thrashing. Since
+pinned files are locked in RAM, it causes an increase in RAM usage and is not recommended for 512MB
+devices. If pinning is done, it’s best to focus on files that cause a lot of I/O reads compared to the file size. It’s
+possible to use systrace to identify files causing I/O reads .
+Example pinning configuration (<device overlay>/frameworks/base/core/res/res/values/config.xml):
+<string-array translatable="false" name="config_defaultPinnerServiceFiles">
+<item>"/system/framework/arm/boot.vdex"</item>
+<item>"/system/framework/arm/boot-framework.vdex"</item>
+</string-array>
+7
+Google Confidential and Proprietary
+Device package configuration
+The FaceUnlock and LiveWallpaper features have been disabled and removed. The following product packages
+must not be preloaded on Android Go Edition devices. Make sure the PRODUCT_PACKAGES configuration for
+the device does not include these types of product packages, the same applies to manufacturer provided
+product packages with face unlock and live wallpaper functionality. Make sure to not inherit product config from
+build/make/target/product/full_base.mk since that will include LiveWallpapers, instead inheric from generic.mk,
+see below.
+● FaceLock
+● LiveWallpapers
+● LiveWallpapersPicker
+Example <product-device>.mk
+# To not pick-up LiveWallpapers, inherit from generic.mk NOT full_base.mk
+$(call inherit-product, ($SRC_TARGET_DIR)/product/generic.mk)
+Configure product locales
+Since ($SRC_TARGET)/product/generic.mk is included instead of full_base.mk the device config also need to
+pick up the default Android Platform product locale list, see below for an example.
+Example <product-device>.mk
+$(call inherit-product, $(SRC_TARGET_DIR)/product/locales_full.mk)
+Configure Google Keyboard (Gboard)
+To minimize the apk size of Google Keyboard, the following language packs (LPs) are packaged by default in
+the apk:
+● en-us (complete LP)
+● en-gb, pt-br, ru-ru, es-es, fr-fr, it-it, de-de (1MB mini-LPs)
+To improve the out of box Setup Wizard experience it is strongly recommended to preload at least one
+additional language pack (at least one complete LP and one mini for primary market), see Gboard customization
+guide for more details.
+8
+Google Confidential and Proprietary
+Other configuration changes
+Below is a list of other feature configurations that are important for Android Go Edition devices, many of these
+features are turned off by default in Android but listed here for completeness and to be used as a checklist when
+configuring the device build target for an Android Go Edition device.
+● Setup Wizard: The “Restore from iPhone" option is disabled and removed from the setup wizard. A
+prebuilt setup wizard is included in the GMS Go package. Manufacturer that customize the setup wizard
+must not include the “Restore from iPhone” option.
+● Launcher: Notification dots (BADGE_ICONS) support has been removed from AOSP Go Launcher3,
+including the Settings part. A prebuilt GoLauncher3 is included in the GMS Go package. Manufacturer
+that provide their own launcher application should not include support for notification dots.
+● Launcher: Widget support has been removed from AOSP Launcher3, manufacturer that provide their
+own launcher application should not include support for widgets.
+● Wearable notifications: Notification listener service is disabled on low ram devices, therefore an
+Android Go Edition device can not be paired and used with Android Wear devices.
+● Split Screen / Multi-window: Multi-window support must be disabled. This is handled automatically
+inside the platform based on the the low-ram flag.
+● Picture in Picture: Picture in Picture must be disabled. Make sure to NOT declare the < feature
+name= "android.software.picture_in_picture" /> , which is typically done by a PRODUCT_COPY_FILE of
+android.software.picture_in_picture.xml to data/etc.
+● Virtual Reality Mode: Android Go edition devices must not enable VR mode. The device configuration
+must not declare the < feature name= "android.software.vr.mode" /> feature.
+● Multiuser: Number of users must be set to 1 to disable multi user support. Make sure to NOT overlay
+frameworks/base/core/res/res/values/config.xml with a setting of config_multiuserMaximumUsers, it is
+set to 1 as default.
+● Work profile: Work profile must not be enabled, it is not recommended to declare the < feature
+name= "android.software.managed_users" /> on low ram devices, see Android CDD for more details.
+● Disk encryption: Disk encryption enabled by default is optional when AES crypto performance is below
+50 MiB/seconds, see Android CDD for more details.
+● Verified boot: Verified boot (dm-verity) is optional when AES crypto performance is below 50
+MiB/seconds, see Android CDD for more details.
+● 32-bit user space only: 64-bit user space should be removed to save storage.
+○ Declare TARGET_ARCH and TARGET_ARCH_VARIANT to 32-bit architecture and do not
+declare TARGET_2ND_ARCH or TARGET_2ND_ARCH_VARIANT.
+○ Configure zygote for 32-bit with PRODUCT_DEFAULT_PROPERTY_OVERRIDES +=
+ro.zygote=zygote32.
+9
+Google Confidential and Proprietary
+Android Go Edition Kernel Configuration
+Kernel config
+Enable memcg
+Memory controller (memcg) should be enabled on Android Go Edition devices. By enabling memcg the Android
+system can reclaim memory better and prioritize memory allocation based on the oom adj score. Userspace
+processes can register to memory pressure events and kill cached processes when system is under pressure.
+Example <device>_defconfig
+CONFIG_MEMCG=y
+CONFIG_MEMCG_SWAP=y
+# CONFIG_ANDROID_LOW_MEMORY_KILLER is not set
+Enable LZ4 compression for zRAM
+LZ4 compression has better decompress rates than the default LZO compression algorithm (3x). Kernel config
+should enable the LZ4 module and zRAM should be configured to use LZ4 in the init.rc script see Enable “Swap
+to zRAM” section.
+Example <device>_defconfig
+CONFIG_ZRAM_LZ4_COMPRESS=y
+Disable KSM
+Disable Kernel Samepage Merging (KSM) to improve performance.
+Example <device>_defconfig
+# CONFIG_KSM is not set
+Disable SLUB debug
+Disable SLUB debug support features to improve performance and optimize code size.
+Example <device>_defconfig
+# CONFIG_SLUB_DEBUG is not set
+Kernel Networking Unit Tests
+Ensure that the device pass the Kernel Networking Unit Tests .
+10
+Google Confidential and Proprietary
+Kernel patches
+It is strongly recommended to stay up to date with the latest Android common kernel patches in AOSP . In
+addition to be up to date with Android common kernel there are a few important kernel changes that are needed
+for Android Go devices.
+Fix compilation error when MEMCG not configured.
+f9a957c.diff.zip
+Make vmpressure win and thresholds configurable.
+169b8d6.diff.zip
+11
+Google Confidential and Proprietary
+About Google Mobile Services Go Edition
+Google Mobile Services (GMS) Go Edition is a collection of proprietary Google applications and APIs that
+support enhanced functionality across devices specifically optimized for low RAM devices. GMS Go Edition
+replace the standard GMS package on all devices with 1GB RAM or below. See GMS Help Center for general
+information about GMS, this document describe specifics to GMS Go Edition.
+For a complete list of GMS Go Edition apps and their availability in each country, see the Low Ram Device
+Application Availability Chart in the references section below.
+Downloading GMS Go Edition
+GMS Go Edition is located in a partner accessible Git repository hosted by Google. It is available to partners that
+have signed a Mobile Application Distribution Agreement (MADA) Amendment with Google and to SOCs with a
+GMS Evaluation License. Contact your technical account manager to request access.
+There are two alternatives to download GMS Go Edition into the device source tree, either using git clone or
+include the GMS project git into the Android Platform manifest file and use repo sync.
+Download using git clone
+cd <PLATFORM-ROOT>/vendor
+git clone -b oc-gms-go-dev --single-branch --depth 1
+https://partner-android.googlesource.com/platform/vendor/partner_gms
+Download using repo sync
+Edit <PLATFORM-ROOT>/.repo/manifest/default.xml and add below git project. Then run “repo sync” to refresh
+the device source tree which will download the GMS Go Edition project git.
+<project clone-depth="1" remote="partner" name="platform/vendor/partner_gms"
+path="vendor/partner_gms" revision="oc-gms-go-dev" />
+Integrating GMS Go Edition
+The GMS package includes two predefined product make files, one for standard GMS and one for GMS Go
+Edition. To include the GMS Go Edition mandatory applications and default GMS Go Edition configuration into a
+device build target replace the inclusion of the standard gms.mk file and include the gms_go.mk file into the
+device makefile instead.
+Example device.mk:
+$(call inherit-product-if-exists, vendor/partner_gms/products/gms_go.mk)
+12
+Google Confidential and Proprietary
+Integrating Launcher3 Go Edition
+The Launcher3 implementation in Android O MR1 has been extended to also support a Go build target. Read
+Android.mk file in packages/apps/Launcher3 for more details on how "Go" version is configured. To build with
+Launcher3Go make sure to define the Go launcher product package, make sure to not include the non Go
+launcher product package.
+Example device.mk:
+PRODUCT_PACKAGES += Launcher3Go
+13
+Google Confidential and Proprietary
+References
+● Source Android Com - General Android Device Configuration and Tuning
+● Partner GMS Help center
+14
