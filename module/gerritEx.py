@@ -41,7 +41,7 @@ return type is a dict list , dict struct as following:
  u'url':}
  '''
 class gerritEx(object):
-    def __init__(self,host="androidxian.huawei.com",port="29418",user="pagilecdmatc"):
+    def __init__(self,host="google.com",port="29418",user="pagilecdmatc"):
         self.cmd="ssh -p %s %s@%s gerrit query"%(port,user,host)
    
     '''type,rowCount,runTimeMilliseconds,moreChanges''' 
