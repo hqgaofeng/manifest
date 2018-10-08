@@ -1,0 +1,10 @@
+##配置jenkins url
+<p><font size=5><font color=red><a href="http://192.168.0.1:8080/source/">opengrok</a><p>
+##配置samba
+[disk]
+comment = share for intoyv
+path = /home/intoyv
+available = yes
+browseable = yes
+public = yes
+writable = yes
