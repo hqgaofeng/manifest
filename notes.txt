@@ -8,3 +8,4 @@ available = yes
 browseable = yes
 public = yes
 writable = yes
+valid users=intoyv
